@@ -125,42 +125,162 @@ class IdealForumSignBot:
             wait = WebDriverWait(self.driver, self.login_timeout)
             
             # 查找并填写用户名
-            username_input = wait.until(
-                EC.presence_of_element_located((By.XPATH, "//input[@placeholder='用户名/Email/手机号码']"))
-            )
-            username_input.clear()
-            username_input.send_keys(self.username)
-            logger.info(f"输入用户名: {self.username}")
+            try:
+                username_input = wait.until(
+                    EC.presence_of_element_located((By.XPATH, "//input[@placeholder='用户名/Email/手机号码']"))
+                )
+                username_input.clear()
+                username_input.send_keys(self.username)
+                logger.info(f"输入用户名: {self.username}")
+            except Exception as e:
+                logger.warning(f"用户名输入框定位失败，尝试其他方式: {e}")
+                # 尝试其他定位方式
+                username_input = wait.until(
+                    EC.presence_of_element_located((By.XPATH, "//input[contains(@placeholder, '用户名') or contains(@placeholder, '手机') or contains(@placeholder, 'Email')]"))
+                )
+                username_input.clear()
+                username_input.send_keys(self.username)
+                logger.info(f"使用备用方式输入用户名: {self.username}")
             
             # 查找并填写密码
-            password_input = self.driver.find_element(By.XPATH, "//input[@placeholder='密码']")
-            password_input.clear()
-            password_input.send_keys(self.password)
-            logger.info("输入密码完成")
+            try:
+                password_input = self.driver.find_element(By.XPATH, "//input[@placeholder='密码']")
+                password_input.clear()
+                password_input.send_keys(self.password)
+                logger.info("输入密码完成")
+            except Exception as e:
+                logger.warning(f"密码输入框定位失败，尝试其他方式: {e}")
+                # 尝试其他定位方式
+                password_input = self.driver.find_element(By.XPATH, "//input[@type='password']")
+                password_input.clear()
+                password_input.send_keys(self.password)
+                logger.info("使用备用方式输入密码完成")
             
-            # 点击登录按钮
-            login_button = self.driver.find_element(By.XPATH, "//button[text()='立即登录']")
-            login_button.click()
-            logger.info("点击登录按钮")
+            # 检查是否有验证码需要处理
+            try:
+                # 检查是否有Geetest验证码
+                captcha_element = self.driver.find_element(By.XPATH, "//div[contains(@class, 'geetest') or contains(text(), '验证') or contains(text(), '点击')]")
+                if captcha_element:
+                    logger.warning("检测到验证码，请手动完成验证码验证...")
+                    logger.info("程序将等待30秒供用户手动完成验证码")
+                    
+                    # 等待验证码完成或者30秒超时
+                    for i in range(30):
+                        try:
+                            # 检查验证码是否消失或登录按钮变为可点击
+                            login_button = self.driver.find_element(By.XPATH, "//button[contains(text(), '立即登录')]")
+                            if login_button and login_button.is_enabled():
+                                logger.info("验证码似乎已完成，继续登录流程")
+                                break
+                        except:
+                            pass
+                        time.sleep(1)
+                        if i % 5 == 0:
+                            logger.info(f"等待验证码完成... ({30-i}秒)")
+            except:
+                logger.info("未检测到验证码，继续登录流程")
+            
+            # 查找并点击登录按钮
+            try:
+                login_button = wait.until(
+                    EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), '立即登录')]"))
+                )
+                login_button.click()
+                logger.info("点击登录按钮")
+            except Exception as e:
+                logger.warning(f"登录按钮定位失败，尝试其他方式: {e}")
+                # 尝试其他定位方式
+                login_selectors = [
+                    "//button[text()='立即登录']",
+                    "//input[@type='submit']",
+                    "//button[@type='submit']",
+                    "//input[@value='立即登录']",
+                    "//a[contains(text(), '登录')]"
+                ]
+                
+                login_button = None
+                for selector in login_selectors:
+                    try:
+                        login_button = self.driver.find_element(By.XPATH, selector)
+                        if login_button:
+                            break
+                    except:
+                        continue
+                
+                if login_button:
+                    login_button.click()
+                    logger.info("使用备用方式点击登录按钮")
+                else:
+                    raise Exception("无法找到登录按钮")
             
             # 等待登录完成，检查是否出现"退出"按钮
-            time.sleep(3)  # 等待页面跳转
+            logger.info("等待登录完成...")
+            time.sleep(5)  # 增加等待时间，等待页面跳转
             
             # 尝试查找"退出"按钮来确认登录成功
             try:
-                logout_element = WebDriverWait(self.driver, 10).until(
-                    EC.presence_of_element_located((By.XPATH, "//*[contains(text(), '退出')]"))
-                )
-                logger.success("登录成功！检测到退出按钮")
-                return True
-            except TimeoutException:
-                # 如果没找到退出按钮，检查是否有错误信息
+                # 多种方式检测登录成功
+                success_indicators = [
+                    "//*[contains(text(), '退出')]",
+                    "//a[contains(text(), '退出')]",
+                    "//link[contains(text(), '退出')]",
+                    "//div[contains(@class, 'logout')]",
+                    "//*[contains(text(), 'UID')]",  # 用户ID显示
+                    "//*[contains(text(), '个人资料')]"  # 个人资料链接
+                ]
+                
+                login_success = False
+                for indicator in success_indicators:
+                    try:
+                        element = WebDriverWait(self.driver, 3).until(
+                            EC.presence_of_element_located((By.XPATH, indicator))
+                        )
+                        if element:
+                            logger.success(f"登录成功！检测到成功指示器: {element.text[:20]}...")
+                            login_success = True
+                            break
+                    except TimeoutException:
+                        continue
+                
+                if login_success:
+                    return True
+                else:
+                    # 检查当前URL是否变化
+                    current_url = self.driver.current_url
+                    if "login" not in current_url and "passport.55188.com" in current_url:
+                        logger.success("登录成功！URL已跳转到用户页面")
+                        return True
+                    
+                    logger.warning("登录状态不明确，未找到明确的成功指示器")
+                    return False
+                    
+            except Exception as e:
+                logger.error(f"检查登录状态时发生错误: {e}")
+                
+                # 最后尝试检查是否有错误信息
                 try:
-                    error_element = self.driver.find_element(By.CLASS_NAME, "error")
-                    error_msg = error_element.text
-                    logger.error(f"登录失败，错误信息: {error_msg}")
-                except NoSuchElementException:
-                    logger.warning("登录状态不明确，未找到退出按钮也未找到错误信息")
+                    error_selectors = [
+                        "//div[contains(@class, 'error')]",
+                        "//span[contains(@class, 'error')]",
+                        "//*[contains(text(), '错误')]",
+                        "//*[contains(text(), '失败')]",
+                        "//*[contains(text(), '验证码')]"
+                    ]
+                    
+                    for selector in error_selectors:
+                        try:
+                            error_element = self.driver.find_element(By.XPATH, selector)
+                            if error_element:
+                                error_msg = error_element.text
+                                logger.error(f"登录失败，错误信息: {error_msg}")
+                                return False
+                        except:
+                            continue
+                    
+                    logger.warning("未找到明确的错误信息")
+                except Exception as e2:
+                    logger.error(f"检查错误信息时发生异常: {e2}")
+                
                 return False
                 
         except TimeoutException:
@@ -235,27 +355,52 @@ class IdealForumSignBot:
             # 等待页面加载
             time.sleep(3)
             
-            # 查找"今日已签到"标志
+            # 查找"今日已签到"标志或签到页面特征
             success_indicators = [
                 "//*[contains(text(), '今日已签到')]",
-                "//*[contains(text(), '已签到')]",
+                "//*[contains(text(), '已签到')]", 
                 "//*[contains(text(), '签到成功')]",
-                "//*[contains(text(), '今天已经签到')]"
+                "//*[contains(text(), '今天已经签到')]",
+                "//*[contains(text(), '您的签到排名')]",  # 签到页面特有的元素
+                "//*[contains(text(), '连续签到')]",      # 连续签到天数
+                "//*[contains(text(), '总天数')]",        # 总签到天数
+                "//*[contains(text(), '签到等级')]",      # 签到等级
+                "//*[contains(text(), '今日签到人数')]",  # 今日签到人数统计
+                "//h1[contains(text(), '每日签到')]"     # 签到页面标题
             ]
             
+            signed_indicators_found = 0
             for indicator in success_indicators:
                 try:
                     success_element = self.driver.find_element(By.XPATH, indicator)
                     if success_element:
-                        logger.success(f"签到成功！找到成功标志: {success_element.text}")
-                        return True
+                        logger.info(f"找到签到相关元素: {success_element.text[:30]}...")
+                        signed_indicators_found += 1
+                        
+                        # 特别检查签到排名，这是已签到的明确标志
+                        if "签到排名" in success_element.text:
+                            logger.success(f"签到成功！检测到签到排名信息: {success_element.text}")
+                            return True
+                            
                 except NoSuchElementException:
                     continue
+            
+            # 如果找到3个或以上签到相关元素，认为已经在签到页面且已签到
+            if signed_indicators_found >= 3:
+                logger.success(f"签到成功！检测到{signed_indicators_found}个签到相关元素，确认已在签到页面")
+                return True
+            
+            # 检查当前URL是否为签到页面
+            current_url = self.driver.current_url
+            if "plugin.php?id=sign" in current_url:
+                logger.success("签到成功！当前页面为签到页面，说明签到操作已完成")
+                return True
             
             # 如果没找到成功标志，检查是否有已签到的其他提示
             already_signed_indicators = [
                 "//*[contains(text(), '您今日已经签到')]",
-                "//*[contains(text(), '重复签到')]"
+                "//*[contains(text(), '重复签到')]",
+                "//*[contains(text(), '今天已经签到了')]"
             ]
             
             for indicator in already_signed_indicators:
@@ -267,7 +412,7 @@ class IdealForumSignBot:
                 except NoSuchElementException:
                     continue
             
-            logger.warning("未找到签到成功的确认信息")
+            logger.warning(f"未找到明确的签到成功确认信息，找到{signed_indicators_found}个相关元素")
             return False
             
         except Exception as e:
