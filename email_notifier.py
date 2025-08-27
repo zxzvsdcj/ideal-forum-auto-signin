@@ -75,15 +75,28 @@ class EmailNotifier:
             msg.attach(MIMEText(email_body, 'html', 'utf-8'))
             
             # 发送邮件
-            with smtplib.SMTP(self.smtp_server, self.smtp_port) as server:
-                server.starttls()
-                server.login(self.sender_email, self.sender_password)
-                server.send_message(msg)
+            if self.smtp_port == 465:
+                # 使用SSL连接
+                with smtplib.SMTP_SSL(self.smtp_server, self.smtp_port) as server:
+                    server.login(self.sender_email, self.sender_password)
+                    server.send_message(msg)
+            else:
+                # 使用TLS连接
+                with smtplib.SMTP(self.smtp_server, self.smtp_port) as server:
+                    server.starttls()
+                    server.login(self.sender_email, self.sender_password)
+                    server.send_message(msg)
             
             logger.success(f"邮件通知发送成功: {self.receiver_email}")
             
         except Exception as e:
-            logger.error(f"发送邮件通知失败: {e}")
+            # 检查是否是QQ邮箱的连接关闭响应问题
+            error_str = str(e)
+            if "(-1, b'\\x00\\x00\\x00')" in error_str or "b'\\x00\\x00\\x00'" in error_str:
+                logger.warning(f"邮件发送可能成功，但服务器响应异常: {e}")
+                logger.info("这通常是QQ邮箱SMTP服务器的连接关闭响应，不影响邮件发送")
+            else:
+                logger.error(f"发送邮件通知失败: {e}")
     
     def _build_subject(self, success):
         """构建邮件主题"""
@@ -250,9 +263,15 @@ class EmailNotifier:
         try:
             # 测试SMTP连接
             logger.info("测试SMTP连接...")
-            with smtplib.SMTP(self.smtp_server, self.smtp_port) as server:
-                server.starttls()
-                server.login(self.sender_email, self.sender_password)
+            if self.smtp_port == 465:
+                # 使用SSL连接
+                with smtplib.SMTP_SSL(self.smtp_server, self.smtp_port) as server:
+                    server.login(self.sender_email, self.sender_password)
+            else:
+                # 使用TLS连接
+                with smtplib.SMTP(self.smtp_server, self.smtp_port) as server:
+                    server.starttls()
+                    server.login(self.sender_email, self.sender_password)
             
             logger.success("邮件配置测试成功!")
             return True
