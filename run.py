@@ -19,7 +19,7 @@ def print_banner():
     ║     Ideal Forum Auto Sign-in Bot      ║
     ║                                       ║
     ║        Version: 1.0.0                 ║
-    ║        Author: AI Assistant           ║
+    ║        Author: zxzvsdcj           ║
     ╚═══════════════════════════════════════╝
     """
     print(banner)
@@ -78,6 +78,10 @@ def main():
     parser.add_argument('--config', action='store_true', help='显示配置信息')
     parser.add_argument('--full-test', action='store_true', help='运行完整功能测试（实际登录）')
     parser.add_argument('--check', action='store_true', help='检查环境和依赖')
+    parser.add_argument('--gui', action='store_true', help='启动GUI界面')
+    parser.add_argument('--email-test', action='store_true', help='测试邮件通知功能')
+    parser.add_argument('--git-sync', action='store_true', help='执行Git智能同步')
+    parser.add_argument('--setup-env', action='store_true', help='设置虚拟环境')
     parser.add_argument('--help', action='store_true', help='显示帮助信息')
     
     args = parser.parse_args()
@@ -121,6 +125,53 @@ def main():
             # 完整功能测试
             print("🎯 运行完整功能测试...")
             os.system(f"{sys.executable} scheduler.py --test")
+        
+        elif args.gui:
+            # 启动GUI界面
+            print("🎨 启动GUI界面...")
+            try:
+                from gui_main import main as gui_main
+                gui_main()
+            except ImportError:
+                print("❌ GUI依赖包未安装，请运行: pip install PyQt6")
+                sys.exit(1)
+            except Exception as e:
+                print(f"❌ GUI启动失败: {e}")
+                sys.exit(1)
+        
+        elif args.email_test:
+            # 测试邮件通知功能
+            print("📧 测试邮件通知功能...")
+            try:
+                from email_notifier import main as email_main
+                email_main()
+            except Exception as e:
+                print(f"❌ 邮件测试失败: {e}")
+                sys.exit(1)
+        
+        elif args.git_sync:
+            # 执行Git智能同步
+            print("🔄 执行Git智能同步...")
+            try:
+                from git_manager import GitManager
+                git_manager = GitManager()
+                success = git_manager.smart_sync()
+                sys.exit(0 if success else 1)
+            except Exception as e:
+                print(f"❌ Git同步失败: {e}")
+                sys.exit(1)
+        
+        elif args.setup_env:
+            # 设置虚拟环境
+            print("🔧 设置虚拟环境...")
+            try:
+                from venv_manager import VirtualEnvironmentManager
+                venv_manager = VirtualEnvironmentManager()
+                success = venv_manager.setup_project_venv()
+                sys.exit(0 if success else 1)
+            except Exception as e:
+                print(f"❌ 环境设置失败: {e}")
+                sys.exit(1)
     
     except KeyboardInterrupt:
         print("\n⏹️  用户中断程序")

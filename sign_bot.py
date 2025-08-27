@@ -19,6 +19,7 @@ from selenium.webdriver.chrome.service import Service
 from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException
 from webdriver_manager.chrome import ChromeDriverManager
 from loguru import logger
+from email_notifier import EmailNotifier
 
 
 class IdealForumSignBot:
@@ -47,6 +48,9 @@ class IdealForumSignBot:
         # URL配置
         self.login_url = "https://passport.55188.com/index/login/"
         self.main_site_url = "https://www.55188.com"
+        
+        # 初始化邮件通知器
+        self.email_notifier = EmailNotifier(config_file)
         
     def setup_logging(self):
         """设置日志记录"""
@@ -180,38 +184,52 @@ class IdealForumSignBot:
             except:
                 logger.info("未检测到验证码，继续登录流程")
             
-            # 查找并点击登录按钮
-            try:
-                login_button = wait.until(
-                    EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), '立即登录')]"))
-                )
-                login_button.click()
-                logger.info("点击登录按钮")
-            except Exception as e:
-                logger.warning(f"登录按钮定位失败，尝试其他方式: {e}")
-                # 尝试其他定位方式
-                login_selectors = [
-                    "//button[text()='立即登录']",
-                    "//input[@type='submit']",
-                    "//button[@type='submit']",
-                    "//input[@value='立即登录']",
-                    "//a[contains(text(), '登录')]"
-                ]
-                
-                login_button = None
-                for selector in login_selectors:
-                    try:
+            # 查找并点击登录按钮 - 优化版本，减少备用方式调用
+            login_selectors = [
+                "//button[contains(text(), '立即登录')]",  # 最常见的情况
+                "//button[text()='立即登录']",           # 精确匹配
+                "//input[@value='立即登录']",            # input按钮
+                "//button[@type='submit']",             # 提交按钮
+                "//input[@type='submit']",              # 提交输入框
+                "//a[contains(text(), '登录')]"         # 链接形式
+            ]
+            
+            login_button = None
+            successful_selector = None
+            
+            # 依次尝试所有选择器，找到第一个可用的
+            for i, selector in enumerate(login_selectors):
+                try:
+                    if i == 0:
+                        # 第一个选择器使用等待机制
+                        login_button = wait.until(
+                            EC.element_to_be_clickable((By.XPATH, selector))
+                        )
+                    else:
+                        # 其他选择器直接查找
                         login_button = self.driver.find_element(By.XPATH, selector)
-                        if login_button:
-                            break
-                    except:
-                        continue
-                
-                if login_button:
+                        
+                    if login_button and login_button.is_enabled():
+                        successful_selector = selector
+                        break
+                        
+                except Exception as e:
+                    if i == 0:
+                        logger.debug(f"主要选择器失败: {selector}")
+                    continue
+            
+            if login_button and successful_selector:
+                try:
                     login_button.click()
-                    logger.info("使用备用方式点击登录按钮")
-                else:
-                    raise Exception("无法找到登录按钮")
+                    if successful_selector == login_selectors[0]:
+                        logger.info("点击登录按钮")
+                    else:
+                        logger.info(f"使用备用选择器点击登录按钮: {successful_selector}")
+                except Exception as e:
+                    logger.warning(f"点击登录按钮时发生错误: {e}")
+                    raise Exception("登录按钮点击失败")
+            else:
+                raise Exception("无法找到可用的登录按钮")
             
             # 等待登录完成，检查是否出现"退出"按钮
             logger.info("等待登录完成...")
@@ -446,10 +464,49 @@ class IdealForumSignBot:
             # 检查签到是否成功
             success = self.check_sign_success()
             
-            if success:
-                logger.success("🎉 签到流程完成！")
-            else:
-                logger.error("❌ 签到流程失败")
+        if success:
+            logger.success("🎉 签到流程完成！")
+            
+            # 获取签到信息发送邮件通知
+            sign_info = {}
+            try:
+                # 尝试获取签到排名信息
+                ranking_element = self.driver.find_element(By.XPATH, "//*[contains(text(), '您的签到排名')]")
+                if ranking_element:
+                    sign_info["签到排名"] = ranking_element.text.replace("您的签到排名：", "").strip()
+            except:
+                pass
+            
+            try:
+                # 尝试获取连续签到天数
+                continuous_element = self.driver.find_element(By.XPATH, "//*[contains(text(), '连续签到')]/following-sibling::*")
+                if continuous_element:
+                    sign_info["连续签到"] = continuous_element.text.strip()
+            except:
+                pass
+            
+            try:
+                # 尝试获取总签到天数
+                total_element = self.driver.find_element(By.XPATH, "//*[contains(text(), '总天数')]/following-sibling::*")
+                if total_element:
+                    sign_info["总签到天数"] = total_element.text.strip()
+            except:
+                pass
+            
+            # 发送成功通知邮件
+            self.email_notifier.send_notification(
+                success=True,
+                message="恭喜！今日签到任务已成功完成。",
+                additional_info=sign_info if sign_info else None
+            )
+        else:
+            logger.error("❌ 签到流程失败")
+            
+            # 发送失败通知邮件
+            self.email_notifier.send_notification(
+                success=False,
+                message="很遗憾，今日签到任务执行失败，请检查网络连接和账户状态。"
+            )
                 
         except Exception as e:
             logger.error(f"签到流程中发生未预期的错误: {e}")
