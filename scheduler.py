@@ -37,45 +37,68 @@ class SignScheduler:
         
     def setup_logging(self):
         """设置日志记录"""
-        log_file = "scheduler_log.txt"
-        
-        # 配置loguru日志
-        logger.remove()  # 移除默认处理器
-        logger.add(
-            sys.stdout,
-            format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
-            level="INFO"
-        )
-        logger.add(
-            log_file,
-            format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
-            level="INFO",
-            rotation="10 MB",
-            retention="30 days",
-            encoding="utf-8"
-        )
+        try:
+            log_file = "scheduler_log.txt"
+            
+            # 配置loguru日志
+            logger.remove()  # 移除默认处理器
+            
+            # 添加控制台输出（只在非打包环境中）
+            if hasattr(sys, '_MEIPASS'):
+                # 在打包环境中，不输出到控制台
+                pass
+            else:
+                logger.add(
+                    sys.stdout,
+                    format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+                    level="INFO"
+                )
+            
+            logger.add(
+                log_file,
+                format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
+                level="INFO",
+                rotation="10 MB",
+                retention="30 days",
+                encoding="utf-8"
+            )
+        except Exception as e:
+            # 如果日志配置失败，使用基本配置
+            print(f"调度器日志配置失败，使用基本配置: {e}")
+            logger.remove()
+            logger.add(
+                "scheduler_log.txt",
+                format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {message}",
+                level="INFO"
+            )
     
     def execute_sign_task(self):
         """执行签到任务"""
         try:
             logger.info("🕐 定时签到任务开始执行...")
+            logger.info("🔧 正在初始化签到机器人...")
             
             # 创建签到机器人实例
             bot = IdealForumSignBot()
             
             # 验证配置
+            logger.info("📋 验证配置信息...")
             if not bot.validate_config():
                 logger.error("配置验证失败，跳过本次签到")
                 return False
+            
+            logger.info("✅ 配置验证通过，开始执行签到...")
             
             # 执行签到
             success = bot.sign_in()
             
             if success:
                 logger.success("✅ 定时签到任务执行成功！")
+                logger.info("📊 可查看详细日志了解签到过程")
                 return True
             else:
                 logger.error("❌ 定时签到任务执行失败！")
+                logger.info("📋 请检查sign_log.txt获取详细错误信息")
                 return False
                 
         except Exception as e:

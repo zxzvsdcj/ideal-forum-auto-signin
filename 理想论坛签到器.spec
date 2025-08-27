@@ -2,15 +2,15 @@
 
 
 a = Analysis(
-    ['run.py'],
+    ['gui_launcher.py'],
     pathex=[],
     binaries=[],
-    datas=[('config.ini', '.'), ('requirements.txt', '.')],
-    hiddenimports=['selenium', 'webdriver_manager', 'loguru', 'schedule', 'configparser', 'email.mime.text', 'email.mime.multipart', 'smtplib'],
+    datas=[('config.ini', '.'), ('app_icon.ico', '.')],
+    hiddenimports=['selenium', 'webdriver_manager', 'loguru', 'schedule', 'configparser', 'PyQt6', 'PyQt6.QtCore', 'PyQt6.QtWidgets', 'PyQt6.QtGui'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=['PyQt6', 'PyQt5', 'tkinter', 'matplotlib', 'numpy', 'pandas'],
+    excludes=['PyQt5', 'PySide2', 'PySide6', 'tkinter', 'matplotlib', 'numpy', 'pandas'],
     noarchive=False,
     optimize=0,
 )
@@ -29,10 +29,11 @@ exe = EXE(
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=True,
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=['app_icon.ico'],
 )

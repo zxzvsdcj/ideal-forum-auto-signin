@@ -226,6 +226,97 @@ class SignInThread(QThread):
             self.finished.emit(False, f"签到过程中发生错误: {str(e)}")
 
 
+class SchedulerThread(QThread):
+    """定时签到调度器线程"""
+    
+    status_updated = pyqtSignal(str)
+    log_updated = pyqtSignal(str)
+    schedule_stopped = pyqtSignal()
+    
+    def __init__(self, scheduler):
+        super().__init__()
+        self.scheduler = scheduler
+        self.running = False
+        
+        # 重定向调度器的日志输出到GUI
+        self.setup_log_forwarding()
+    
+    def setup_log_forwarding(self):
+        """设置日志转发"""
+        try:
+            from loguru import logger
+            import sys
+            
+            # 添加一个处理器，将日志发送到GUI
+            def log_to_gui(message):
+                # 清理日志消息，提取有用信息
+                record = message.record
+                level = record["level"].name
+                msg = record["message"]
+                time_str = record["time"].strftime("%H:%M:%S")
+                
+                # 根据日志级别添加相应的图标
+                if level == "SUCCESS":
+                    gui_msg = f"[{time_str}] ✅ {msg}"
+                elif level == "ERROR":
+                    gui_msg = f"[{time_str}] ❌ {msg}"
+                elif level == "WARNING":
+                    gui_msg = f"[{time_str}] ⚠️ {msg}"
+                else:
+                    gui_msg = f"[{time_str}] 📝 {msg}"
+                
+                # 发送到GUI (如果在主线程中)
+                try:
+                    self.log_updated.emit(gui_msg)
+                except:
+                    pass  # 如果信号发送失败，忽略
+            
+            # 移除现有的scheduler日志处理器并添加GUI转发
+            logger.remove()
+            logger.add(log_to_gui, level="INFO", format="{message}")
+            logger.add("scheduler_log.txt", 
+                      format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {message}",
+                      level="INFO", rotation="10 MB", retention="30 days")
+            
+        except Exception as e:
+            self.log_updated.emit(f"⚠️ 日志转发设置失败: {e}")
+        
+    def run(self):
+        """运行调度器"""
+        try:
+            self.running = True
+            self.log_updated.emit("🚀 定时签到调度器已启动")
+            
+            # 设置定时任务
+            if not self.scheduler.setup_schedule():
+                self.log_updated.emit("❌ 定时任务设置失败")
+                self.schedule_stopped.emit()
+                return
+            
+            self.log_updated.emit(f"✅ 定时任务设置成功，签到时间: {self.scheduler.sign_time}")
+            
+            # 显示下次执行时间
+            import schedule
+            next_run = schedule.next_run()
+            if next_run:
+                self.log_updated.emit(f"📅 下次执行时间: {next_run.strftime('%Y-%m-%d %H:%M:%S')}")
+            
+            # 运行调度器循环
+            while self.running:
+                schedule.run_pending()
+                self.msleep(30000)  # 每30秒检查一次（使用msleep而不是time.sleep）
+                
+        except Exception as e:
+            self.log_updated.emit(f"❌ 调度器运行错误: {e}")
+        finally:
+            self.log_updated.emit("⏹️ 定时签到调度器已停止")
+            self.schedule_stopped.emit()
+    
+    def stop(self):
+        """停止调度器"""
+        self.running = False
+        self.quit()
+        self.wait()
 class MainWindow(QMainWindow):
     """主窗口类"""
     
@@ -977,12 +1068,12 @@ class MainWindow(QMainWindow):
         if success:
             self.add_log(f"✅ {message}")
             self.status_bar.showMessage("签到成功完成")
-            QMessageBox.information(self, "成功", message)
+            self.show_auto_close_message("成功", message, "success")
             self.update_status("online")
         else:
             self.add_log(f"❌ {message}")
             self.status_bar.showMessage("签到失败")
-            QMessageBox.critical(self, "失败", message)
+            self.show_auto_close_message("失败", message, "error")
             self.update_status("error")
     
     def start_schedule(self):
@@ -992,12 +1083,22 @@ class MainWindow(QMainWindow):
             return
         
         try:
+            # 保存当前配置
+            self.save_config()
+            
+            # 创建调度器
             self.scheduler = SignScheduler()
-            # 这里可以添加调度器启动逻辑
+            
+            # 创建并启动调度器线程
+            self.scheduler_thread = SchedulerThread(self.scheduler)
+            self.scheduler_thread.status_updated.connect(self.update_status)
+            self.scheduler_thread.log_updated.connect(self.add_log)
+            self.scheduler_thread.schedule_stopped.connect(self.on_schedule_stopped)
+            
+            self.scheduler_thread.start()
             
             self.start_schedule_btn.setEnabled(False)
             self.stop_schedule_btn.setEnabled(True)
-            self.add_log("✅ 定时签到已启动")
             self.status_bar.showMessage("定时签到运行中")
             self.update_status("running")
             
@@ -1007,11 +1108,62 @@ class MainWindow(QMainWindow):
     
     def stop_schedule(self):
         """停止定时签到"""
+        try:
+            if hasattr(self, 'scheduler_thread') and self.scheduler_thread.isRunning():
+                self.scheduler_thread.stop()
+                
+            # 清除所有定时任务
+            import schedule
+            schedule.clear()
+            
+        except Exception as e:
+            self.add_log(f"⚠️ 停止调度器时出现问题: {e}")
+        
+        self.on_schedule_stopped()
+    
+
+    def refresh_logs(self):
+        """刷新日志显示，包括调度器日志"""
+        try:
+            # 读取调度器日志文件
+            scheduler_log_file = "scheduler_log.txt"
+            if os.path.exists(scheduler_log_file):
+                with open(scheduler_log_file, 'r', encoding='utf-8') as f:
+                    lines = f.readlines()
+                
+                # 只显示最近的10条日志
+                recent_logs = lines[-10:] if len(lines) > 10 else lines
+                
+                for line in recent_logs:
+                    if line.strip():
+                        # 简化日志格式显示
+                        parts = line.strip().split(" | ")
+                        if len(parts) >= 3:
+                            time_part = parts[0]
+                            level_part = parts[1].strip()
+                            message_part = " | ".join(parts[2:])
+                            
+                            # 格式化显示
+                            if "SUCCESS" in level_part or "✅" in message_part:
+                                self.add_log(f"📅 {time_part.split(' ')[1]} | ✅ {message_part}")
+                            elif "ERROR" in level_part or "❌" in message_part:
+                                self.add_log(f"📅 {time_part.split(' ')[1]} | ❌ {message_part}")
+                            elif "INFO" in level_part:
+                                self.add_log(f"📅 {time_part.split(' ')[1]} | 📝 {message_part}")
+                            
+        except Exception as e:
+            self.add_log(f"⚠️ 读取调度器日志失败: {e}")
+    
+    def on_schedule_stopped(self):
+        """调度器停止时的回调"""
         self.start_schedule_btn.setEnabled(True)
         self.stop_schedule_btn.setEnabled(False)
         self.add_log("⏹️ 定时签到已停止")
         self.status_bar.showMessage("就绪")
         self.update_status("offline")
+        
+        # 停止时刷新一次日志
+        self.refresh_logs()
     
     def test_configuration(self):
         """测试配置"""
@@ -1060,14 +1212,28 @@ class MainWindow(QMainWindow):
         import platform
         
         try:
+            current_dir = os.getcwd()
+            
             if platform.system() == "Windows":
-                subprocess.run(["explorer", "."], check=True)
+                # 使用更可靠的方式打开文件夹
+                os.startfile(current_dir)
             elif platform.system() == "Darwin":  # macOS
-                subprocess.run(["open", "."], check=True)
+                subprocess.run(["open", current_dir], check=True)
             else:  # Linux
-                subprocess.run(["xdg-open", "."], check=True)
+                subprocess.run(["xdg-open", current_dir], check=True)
+            
+            self.add_log("📁 已打开日志文件夹")
+            
         except Exception as e:
-            QMessageBox.critical(self, "错误", f"打开文件夹失败：{e}")
+            self.add_log(f"❌ 打开文件夹失败: {e}")
+            # 备用方案：使用QFileDialog显示目录
+            try:
+                from PyQt6.QtWidgets import QDesktopServices
+                from PyQt6.QtCore import QUrl
+                QDesktopServices.openUrl(QUrl.fromLocalFile(os.getcwd()))
+                self.add_log("📁 使用系统默认方式打开文件夹")
+            except Exception as e2:
+                QMessageBox.critical(self, "错误", f"打开文件夹失败：{e2}")
     
     def check_schedule_status(self):
         """检查调度状态"""
@@ -1106,9 +1272,75 @@ class MainWindow(QMainWindow):
                 QMessageBox.critical(self, "错误", f"保存日志失败：{e}")
 
 
+
+    def show_auto_close_message(self, title, message, msg_type="info", auto_close_seconds=5):
+        """显示可自动关闭的消息框"""
+        from PyQt6.QtCore import QTimer
+        
+        # 创建消息框
+        if msg_type == "success":
+            msg_box = QMessageBox.information
+        elif msg_type == "error":
+            msg_box = QMessageBox.critical
+        else:
+            msg_box = QMessageBox.information
+        
+        # 创建消息框实例
+        msg = QMessageBox(self)
+        msg.setWindowTitle(title)
+        msg.setText(message)
+        
+        # 设置图标
+        if msg_type == "success":
+            msg.setIcon(QMessageBox.Icon.Information)
+        elif msg_type == "error":
+            msg.setIcon(QMessageBox.Icon.Critical)
+        else:
+            msg.setIcon(QMessageBox.Icon.Information)
+        
+        # 添加自动关闭功能
+        if hasattr(self, 'scheduler') and self.scheduler is not None:
+            # 如果是定时任务模式，自动关闭
+            msg.setText(f"{message}\n\n(此消息将在 {auto_close_seconds} 秒后自动关闭)")
+            
+            # 创建定时器
+            timer = QTimer()
+            timer.timeout.connect(msg.accept)
+            timer.start(auto_close_seconds * 1000)  # 转换为毫秒
+            
+            # 显示消息框
+            msg.exec()
+            timer.stop()
+        else:
+            # 如果是手动操作，正常显示
+            msg.exec()
+
 def main():
     """主函数"""
     app = QApplication(sys.argv)
+# 设置应用程序图标
+    app_icon_path = None
+    possible_icon_paths = [
+        "app_icon.ico",
+        "app_icon.png", 
+        os.path.join(os.path.dirname(__file__), "app_icon.ico"),
+        os.path.join(os.path.dirname(__file__), "app_icon.png")
+    ]
+    
+    for icon_path in possible_icon_paths:
+        if os.path.exists(icon_path):
+            app_icon_path = icon_path
+            break
+    
+    if app_icon_path:
+        app.setWindowIcon(QIcon(app_icon_path))
+        # 在Windows上设置应用程序ID，确保任务栏图标正确显示
+        try:
+            import ctypes
+            myappid = 'idealforum.signin.app.1.0'  # 应用程序标识符
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+        except:
+            pass
     app.setApplicationName("理想论坛自动签到程序")
     app.setApplicationVersion("1.0.0")
     

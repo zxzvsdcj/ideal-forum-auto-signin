@@ -54,24 +54,42 @@ class IdealForumSignBot:
         
     def setup_logging(self):
         """设置日志记录"""
-        log_file = self.config.get('LOGGING', 'log_file')
-        log_level = self.config.get('LOGGING', 'log_level')
-        
-        # 配置loguru日志
-        logger.remove()  # 移除默认处理器
-        logger.add(
-            sys.stdout,
-            format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
-            level=log_level
-        )
-        logger.add(
-            log_file,
-            format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
-            level=log_level,
-            rotation="10 MB",
-            retention="7 days",
-            encoding="utf-8"
-        )
+        try:
+            log_file = self.config.get('LOGGING', 'log_file', fallback='sign_log.txt')
+            log_level = self.config.get('LOGGING', 'log_level', fallback='INFO')
+            
+            # 配置loguru日志
+            logger.remove()  # 移除默认处理器
+            
+            # 添加控制台输出（只在非打包环境中）
+            if hasattr(sys, '_MEIPASS'):
+                # 在打包环境中，不输出到控制台
+                pass
+            else:
+                logger.add(
+                    sys.stdout,
+                    format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+                    level=log_level
+                )
+            
+            # 添加文件输出
+            logger.add(
+                log_file,
+                format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
+                level=log_level,
+                rotation="10 MB",
+                retention="7 days",
+                encoding="utf-8"
+            )
+        except Exception as e:
+            # 如果日志配置失败，使用基本配置
+            print(f"日志配置失败，使用基本配置: {e}")
+            logger.remove()
+            logger.add(
+                "sign_log.txt",
+                format="{time:YYYY-MM-DD HH:mm:ss} | {level} | {message}",
+                level="INFO"
+            )
     
     def setup_driver(self):
         """设置Chrome浏览器驱动"""
