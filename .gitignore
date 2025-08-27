@@ -428,6 +428,7 @@ vendor/
 *.crt
 *.p12
 *.pfx
+config.ini
 
 # ================== AI 助手记忆文件 ==================
 .cunzhi-memory/
