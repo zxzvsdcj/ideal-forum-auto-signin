@@ -19,7 +19,7 @@ def print_banner():
     ║     Ideal Forum Auto Sign-in Bot      ║
     ║                                       ║
     ║        Version: 1.0.0                 ║
-    ║        Author: zxzvsdcj           ║
+    ║        Author: zxzvsdcj               ║
     ╚═══════════════════════════════════════╝
     """
     print(banner)

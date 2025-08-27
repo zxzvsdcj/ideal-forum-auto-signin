@@ -464,49 +464,49 @@ class IdealForumSignBot:
             # 检查签到是否成功
             success = self.check_sign_success()
             
-        if success:
-            logger.success("🎉 签到流程完成！")
-            
-            # 获取签到信息发送邮件通知
-            sign_info = {}
-            try:
-                # 尝试获取签到排名信息
-                ranking_element = self.driver.find_element(By.XPATH, "//*[contains(text(), '您的签到排名')]")
-                if ranking_element:
-                    sign_info["签到排名"] = ranking_element.text.replace("您的签到排名：", "").strip()
-            except:
-                pass
-            
-            try:
-                # 尝试获取连续签到天数
-                continuous_element = self.driver.find_element(By.XPATH, "//*[contains(text(), '连续签到')]/following-sibling::*")
-                if continuous_element:
-                    sign_info["连续签到"] = continuous_element.text.strip()
-            except:
-                pass
-            
-            try:
-                # 尝试获取总签到天数
-                total_element = self.driver.find_element(By.XPATH, "//*[contains(text(), '总天数')]/following-sibling::*")
-                if total_element:
-                    sign_info["总签到天数"] = total_element.text.strip()
-            except:
-                pass
-            
-            # 发送成功通知邮件
-            self.email_notifier.send_notification(
-                success=True,
-                message="恭喜！今日签到任务已成功完成。",
-                additional_info=sign_info if sign_info else None
-            )
-        else:
-            logger.error("❌ 签到流程失败")
-            
-            # 发送失败通知邮件
-            self.email_notifier.send_notification(
-                success=False,
-                message="很遗憾，今日签到任务执行失败，请检查网络连接和账户状态。"
-            )
+            if success:
+                logger.success("🎉 签到流程完成！")
+                
+                # 获取签到信息发送邮件通知
+                sign_info = {}
+                try:
+                    # 尝试获取签到排名信息
+                    ranking_element = self.driver.find_element(By.XPATH, "//*[contains(text(), '您的签到排名')]")
+                    if ranking_element:
+                        sign_info["签到排名"] = ranking_element.text.replace("您的签到排名：", "").strip()
+                except:
+                    pass
+                
+                try:
+                    # 尝试获取连续签到天数
+                    continuous_element = self.driver.find_element(By.XPATH, "//*[contains(text(), '连续签到')]/following-sibling::*")
+                    if continuous_element:
+                        sign_info["连续签到"] = continuous_element.text.strip()
+                except:
+                    pass
+                
+                try:
+                    # 尝试获取总签到天数
+                    total_element = self.driver.find_element(By.XPATH, "//*[contains(text(), '总天数')]/following-sibling::*")
+                    if total_element:
+                        sign_info["总签到天数"] = total_element.text.strip()
+                except:
+                    pass
+                
+                # 发送成功通知邮件
+                self.email_notifier.send_notification(
+                    success=True,
+                    message="恭喜！今日签到任务已成功完成。",
+                    additional_info=sign_info if sign_info else None
+                )
+            else:
+                logger.error("❌ 签到流程失败")
+                
+                # 发送失败通知邮件
+                self.email_notifier.send_notification(
+                    success=False,
+                    message="很遗憾，今日签到任务执行失败，请检查网络连接和账户状态。"
+                )
                 
         except Exception as e:
             logger.error(f"签到流程中发生未预期的错误: {e}")
